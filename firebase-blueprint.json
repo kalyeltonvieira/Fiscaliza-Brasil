@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "AIExplanacao": {
+      "title": "AI Explanacao Cache",
+      "description": "Cache persistente de análises feitas pela IA para proposições e votos.",
+      "type": "object",
+      "properties": {
+        "tituloAmigavel": { "type": "string" },
+        "explicacao": { "type": "string" },
+        "paraQuemE": { "type": "string" },
+        "impacto": { "type": "string", "enum": ["baixo", "medio", "alto"] },
+        "beneficiaPovo": { "type": "boolean" },
+        "urgente": { "type": "boolean" },
+        "critico": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tituloAmigavel", "explicacao", "beneficiaPovo"]
+    }
+  },
+  "firestore": {
+    "ai_cache/{cacheId}": {
+      "schema": "AIExplanacao",
+      "description": "Armazena as traduções da IA indexadas por um ID único baseado no conteúdo original."
+    }
+  }
+}

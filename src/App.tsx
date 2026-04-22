@@ -5,12 +5,16 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Deputado, fetchDeputados, searchDeputados } from './services/camara';
+import { fetchSenadores, Senador } from './services/senado';
 import { DeputadoCard } from './components/DeputadoCard';
 import { DeputadoModal } from './components/DeputadoModal';
-import { Search, Info, LayoutGrid, Eye, AlertTriangle } from 'lucide-react';
+import { Search, Info, LayoutGrid, Eye, AlertTriangle, Landmark, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+type CasaLegislativa = 'camara' | 'senado';
+
 export default function App() {
+  const [casa, setCasa] = useState<CasaLegislativa>('camara');
   const [deputados, setDeputados] = useState<Deputado[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,12 +28,28 @@ export default function App() {
     if (loading) return;
     if (observer.current) observer.current.disconnect();
     observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore && searchTerm === '') {
+      if (entries[0].isIntersecting && hasMore && searchTerm === '' && casa === 'camara') {
         setPage(prevPage => prevPage + 1);
       }
     });
     if (node) observer.current.observe(node);
-  }, [loading, hasMore, searchTerm]);
+  }, [loading, hasMore, searchTerm, casa]);
+
+  // Transform Senador to Deputado interface for UI consistency
+  const mapSenadorToDeputado = (s: any): Deputado => {
+    const ident = s.IdentificacaoParlamentar || {};
+    return {
+      id: parseInt(ident.CodigoParlamentar || "0"),
+      uri: ``,
+      nome: ident.NomeParlamentar || "Senador não identificado",
+      siglaPartido: ident.SiglaPartidoParlamentar || "S.PART",
+      uriPartido: ``,
+      siglaUf: ident.UfParlamentar || "BR",
+      idLegislatura: 57, 
+      urlFoto: ident.UrlFotoParlamentar || "https://www.camara.leg.br/tema/assets/images/foto-deputado-ausente.png",
+      email: ident.EmailParlamentar || ""
+    };
+  };
 
   // Initial load and infinite scroll
   useEffect(() => {
@@ -38,9 +58,17 @@ export default function App() {
       setLoading(true);
       setError(null);
       try {
-        const data = await fetchDeputados(page);
-        if (data.length === 0) setHasMore(false);
-        setDeputados(prev => page === 1 ? data : [...prev, ...data]);
+        if (casa === 'camara') {
+          const data = await fetchDeputados(page);
+          if (data.length === 0) setHasMore(false);
+          setDeputados(prev => page === 1 ? data : [...prev, ...data]);
+        } else {
+          const data = await fetchSenadores();
+          // Safety check: sometimes API returns single object if only 1 result
+          const senatorsArray = Array.isArray(data) ? data : [data];
+          setDeputados(senatorsArray.map(mapSenadorToDeputado));
+          setHasMore(false); 
+        }
       } catch (err: any) {
         console.error(err);
         setError(`Erro de conexão. Tente novamente.`);
@@ -49,21 +77,37 @@ export default function App() {
       }
     };
     load();
-  }, [page, searchTerm]);
+  }, [page, searchTerm, casa]);
 
   // Search logic
   useEffect(() => {
     const handler = setTimeout(async () => {
       if (searchTerm === '') {
-        setError(null);
-        setPage(1); 
+        if (casa === 'camara') {
+           setError(null);
+           setPage(1); 
+        }
         return;
       }
       setLoading(true);
       setError(null);
       try {
-        const data = await searchDeputados(searchTerm);
-        setDeputados(data);
+        if (casa === 'camara') {
+          const data = await searchDeputados(searchTerm);
+          setDeputados(data);
+        } else {
+          // Local search for Senate as we already have all data
+          const allSenadores = await fetchSenadores();
+          const senatorsArray = Array.isArray(allSenadores) ? allSenadores : [allSenadores];
+          const filtered = senatorsArray
+            .map(mapSenadorToDeputado)
+            .filter(s => 
+              s.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
+              s.siglaPartido.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              s.siglaUf.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+          setDeputados(filtered);
+        }
         setHasMore(false);
       } catch (err: any) {
         console.error(err);
@@ -74,7 +118,15 @@ export default function App() {
     }, 500);
 
     return () => clearTimeout(handler);
-  }, [searchTerm]);
+  }, [searchTerm, casa]);
+
+  const handleCasaChange = (newCasa: CasaLegislativa) => {
+    setCasa(newCasa);
+    setPage(1);
+    setDeputados([]);
+    setSearchTerm('');
+    setHasMore(true);
+  };
 
   return (
     <div className="min-h-screen bg-black text-white selection:bg-white/10">
@@ -120,18 +172,39 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-12">
-        <div className="mb-16 text-center sm:text-left">
-          <motion.h2 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-4xl sm:text-6xl font-extrabold tracking-tight mb-6"
-          >
-            Vigilância <span className="text-neutral-500 font-normal">Contínua.</span>
-          </motion.h2>
-          <p className="text-neutral-500 text-sm max-w-md leading-relaxed">
-            Monitoramento oficial de 513 deputados federais. 
-            Informação bruta, filtrada por tecnologia e transparência.
-          </p>
+        <div className="flex flex-col md:flex-row justify-between items-end gap-8 mb-16">
+          <div className="text-center sm:text-left">
+            <motion.h2 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-4xl sm:text-6xl font-extrabold tracking-tight mb-6"
+            >
+              Vigilância <span className="text-neutral-500 font-normal">Contínua.</span>
+            </motion.h2>
+            <p className="text-neutral-500 text-sm max-w-md leading-relaxed">
+              Monitoramento oficial de {casa === 'camara' ? '513 deputados federais' : '81 senadores da república'}. 
+              Informação bruta, filtrada por tecnologia e transparência.
+            </p>
+          </div>
+
+          <div className="flex items-center p-1 bg-neutral-900 border border-white/5 rounded-2xl">
+              <button 
+                onClick={() => handleCasaChange('camara')}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all
+                  ${casa === 'camara' ? 'bg-white text-black shadow-xl shadow-white/5' : 'text-neutral-500 hover:text-white'}`}
+              >
+                <Users size={14} />
+                Câmara
+              </button>
+              <button 
+                onClick={() => handleCasaChange('senado')}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all
+                  ${casa === 'senado' ? 'bg-white text-black shadow-xl shadow-white/5' : 'text-neutral-500 hover:text-white'}`}
+              >
+                <Landmark size={14} />
+                Senado
+              </button>
+          </div>
         </div>
 
         {error && (
@@ -180,6 +253,7 @@ export default function App() {
           <DeputadoModal 
             deputado={selectedDeputado} 
             onClose={() => setSelectedDeputado(null)} 
+            casa={casa}
           />
         )}
       </AnimatePresence>
@@ -194,11 +268,12 @@ export default function App() {
                 <h3 className="text-[10px] font-black tracking-widest uppercase">Fiscaliza Brasil</h3>
              </div>
              <p className="text-neutral-600 text-[10px] leading-relaxed uppercase tracking-tighter">
-               Dados oficiais • Câmara dos Deputados • AI Analysis • Transparência Radical
+               Dados oficiais • Congresso Nacional (Câmara e Senado) • AI Analysis • Transparência Radical
              </p>
           </div>
           <div className="flex items-center gap-8 grayscale brightness-50 opacity-40">
              <img src="https://dadosabertos.camara.leg.br/static/img/logo-camara.png" alt="Câmara" className="h-8" />
+             <img src="https://www12.senado.leg.br/hotsites/noticias/imagens/logo-senado-federal.png" alt="Senado" className="h-8" />
           </div>
         </div>
       </footer>

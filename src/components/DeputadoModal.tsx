@@ -16,33 +16,147 @@ import {
   fetchOrgaos,
   fetchVotoEmVotacao 
 } from '../services/camara';
-import { explicarProposicao, Explanacao, explicarVoto } from '../services/ai';
+import { fetchSenadorProposicoes, fetchSenadorVotacoes, fetchSenadorHistorico } from '../services/senado';
+import { explicarProposicao, Explanacao, comoIssoMeAfeta, explicarVoto } from '../services/ai';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, FileText, MessageSquare, Briefcase, AlertTriangle, Users, Building, ChevronRight, Info, Vote, History, MapPin, ShieldAlert, Award } from 'lucide-react';
+import Markdown from 'react-markdown';
+import { X, FileText, MessageSquare, Briefcase, AlertTriangle, Users, Building, Vote, History, ShieldAlert, Award, Search, Filter, UserCheck, ChevronDown, Check, Coins, Zap, Landmark } from 'lucide-react';
+
+import { AudioButton } from './AudioButton';
 
 interface Props {
   deputado: Deputado;
   onClose: () => void;
+  casa: 'camara' | 'senado';
 }
 
-const VotacaoItem = ({ vote, deputadoId }: { vote: Votacao; deputadoId: number; key?: any }) => {
+const ProposicaoCard = ({ prop, key }: { prop: Proposicao, key?: any }) => {
   const [explanacao, setExplanacao] = useState<Explanacao | null>(null);
-  const [realVote, setRealVote] = useState(vote.voto);
   const [loading, setLoading] = useState(false);
-  const [showOriginal, setShowOriginal] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
+  const [perfil, setPerfil] = useState<"CLT" | "MEI" | "empresario" | "aposentado" | null>(null);
+  const [perfilAna, setPerfilAna] = useState<string | null>(null);
+  const [anaLoading, setAnaLoading] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const res = await explicarProposicao(prop.ementa, prop.siglaTipo, prop.numero, prop.ano);
+        setExplanacao(res);
+      } catch (err) {
+        console.error("AI Error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [prop]);
+
+  const handleAnalisePerfil = async (p: any) => {
+    setPerfil(p);
+    setAnaLoading(true);
+    const res = await comoIssoMeAfeta(prop.ementa, p);
+    setPerfilAna(res);
+    setAnaLoading(false);
+  };
+
+  if (loading) return (
+    <div className="p-6 rounded-[32px] bg-white/[0.02] border border-white/5 animate-pulse mb-4 h-48" />
+  );
+
+  if (!explanacao) return (
+    <div className="group relative pl-8 pb-12 last:pb-0">
+      <div className="absolute left-0 top-0 bottom-0 w-px bg-white/5" />
+      <div className="absolute left-[-4px] top-2 w-2 h-2 rounded-full border border-black bg-neutral-800" />
+      <div className="flex flex-col gap-4">
+        <span className="text-[10px] font-black bg-white/5 border border-white/10 px-2 py-1 rounded text-neutral-500 uppercase tracking-widest w-fit">
+          {prop.siglaTipo} {prop.numero}/{prop.ano}
+        </span>
+        <h3 className="text-lg font-bold text-white tracking-tight leading-tight">
+          {prop.ementa}
+        </h3>
+        <p className="text-xs text-neutral-600 italic">Análise de IA indisponível para este item.</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="group relative pl-8 pb-12 last:pb-0">
+      <div className="absolute left-0 top-0 bottom-0 w-px bg-white/5 group-last:bg-transparent" />
+      <div className="absolute left-[-4px] top-2 w-2 h-2 rounded-full border border-black bg-neutral-800" />
+
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-black bg-white/5 border border-white/10 px-2 py-1 rounded text-neutral-500 uppercase tracking-widest whitespace-nowrap">
+            {explanacao.tipo} {explanacao.numero}
+          </span>
+          <div className="flex gap-1">
+              {explanacao.impactos.salario && <Coins size={12} className="text-emerald-500" />}
+              {explanacao.impactos.impostos && <FileText size={12} className="text-rose-500" />}
+              {explanacao.impactos.beneficios && <Award size={12} className="text-brand-accent" />}
+          </div>
+        </div>
+
+        <h3 className="text-lg font-bold text-white tracking-tight leading-tight transition-colors">
+          {explanacao.titulo}
+        </h3>
+
+        <p className="text-sm text-neutral-400 font-medium leading-relaxed max-w-2xl">
+          {explanacao.resumo_simples}
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          {explanacao.tags.slice(0, 4).map(t => (
+            <span key={t} className="text-[9px] font-bold text-neutral-600 bg-white/5 px-2 py-0.5 rounded uppercase tracking-wider">
+              {t}
+            </span>
+          ))}
+        </div>
+
+        <button 
+          onClick={() => setShowDetail(!showDetail)}
+          className="text-[10px] font-black text-brand-accent hover:text-white transition-colors uppercase tracking-widest flex items-center gap-2 w-fit"
+        >
+          {showDetail ? 'Menos Detalhes' : 'Análise Completa'}
+          <ChevronDown size={14} className={`transition-transform ${showDetail ? 'rotate-180' : ''}`} />
+        </button>
+
+        {showDetail && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="space-y-6 pt-4 border-t border-white/5 mt-2"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-black text-neutral-600 uppercase tracking-widest">Público Afetado</h4>
+                <p className="text-xs text-white font-bold">{explanacao.quem_afeta.join(', ')}</p>
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-black text-neutral-600 uppercase tracking-widest">Resultado Prático</h4>
+                <p className="text-xs text-white font-bold">{explanacao.impacto_resumido}</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const VotacaoItem = ({ vote }: { vote: Votacao; deputadoId: number }) => {
+  const [explanacao, setExplanacao] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const carregar = async () => {
+      // Small optimization: only explain if we have some text
+      if (!vote.proposicao && !vote.titulo) return;
+      
       setLoading(true);
       try {
-        // Se o voto ainda não foi carregado (está como '...'), buscamos agora
-        let finalVote = vote.voto;
-        if (vote.voto === '...') {
-          finalVote = await fetchVotoEmVotacao(vote.id, deputadoId);
-          setRealVote(finalVote);
-        }
-        
-        const res = await explicarVoto(finalVote, vote.titulo, vote.proposicao?.ementa || '');
+        const res = await explicarVoto(vote.voto, vote.titulo, vote.proposicao?.ementa || '');
         setExplanacao(res);
       } catch (err) {
         console.error("Voto AI Error:", err);
@@ -51,431 +165,281 @@ const VotacaoItem = ({ vote, deputadoId }: { vote: Votacao; deputadoId: number; 
       }
     };
     carregar();
-  }, [vote, deputadoId]);
+  }, [vote]);
+
+  const getVoteColor = (v: string) => {
+    const vd = v.toLowerCase();
+    if (vd.includes('sim')) return 'text-emerald-500 border-emerald-500/20 bg-emerald-500/5';
+    if (vd.includes('não')) return 'text-rose-500 border-rose-500/20 bg-rose-500/5';
+    return 'text-neutral-400 border-neutral-500/20 bg-neutral-500/5';
+  };
 
   return (
-    <div className={`p-6 rounded-3xl mb-4 bg-white/[0.03] border border-white/[0.05] transition-all
-      ${explanacao?.beneficiaPovo ? 'border-l-4 border-l-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.02)]' : 'border-l-4 border-l-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.02)]'}`}>
-      
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <span className={`text-[8px] font-black uppercase tracking-[0.2em] px-2.5 py-1 rounded-full
-              ${realVote === 'Sim' ? 'bg-emerald-500 text-black' : realVote === '...' ? 'bg-neutral-800 text-neutral-500 animate-pulse' : 'bg-rose-500 text-black'}`}>
-              Votou {realVote.toUpperCase()}
-            </span>
-            {explanacao?.critico && (
-              <span className="text-[8px] font-black uppercase tracking-[0.2em] bg-white text-black px-2.5 py-1 rounded-full flex items-center gap-1">
-                <AlertTriangle size={10} /> Voto Crítico
-              </span>
-            )}
-            <span className="text-[8px] font-bold text-neutral-500 uppercase tracking-widest">{new Date(vote.dataHoraRegistro).toLocaleDateString()}</span>
-          </div>
-          <h4 className="font-bold text-sm text-white tracking-tight leading-tight">
-             {loading ? 'Analisando impacto do voto...' : explanacao?.tituloAmigavel || vote.titulo}
-          </h4>
-        </div>
-        <div className="text-right">
-             <span className={`text-[9px] font-black uppercase tracking-widest
-              ${explanacao?.beneficiaPovo ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {explanacao?.beneficiaPovo ? '🟢 Pró-Povo' : '🔴 Pró-Elite'}
-            </span>
-        </div>
-      </div>
+    <div className="relative pl-8 pb-10 group last:pb-0">
+      {/* Timeline Line */}
+      <div className="absolute left-0 top-0 bottom-0 w-px bg-white/5" />
+      <div className="absolute left-[-4px] top-2 w-2 h-2 rounded-full border border-black bg-white shadow-[0_0_10px_rgba(255,255,255,0.3)]" />
 
-      <p className="text-neutral-400 text-xs leading-relaxed mb-4">
-        {explanacao?.explicacao || 'Processando análise simplificada...'}
-      </p>
-
-      <div className="flex justify-between items-center pt-4 border-t border-white/5">
-        <div className="text-[9px] text-neutral-600 font-bold uppercase tracking-tight flex items-center gap-2">
-          <Building size={10} /> Local: {vote.siglaOrgao}
-        </div>
-        <button 
-          onClick={() => setShowOriginal(!showOriginal)}
-          className="text-[9px] text-neutral-700 hover:text-white transition-colors"
-        >
-          Ver Metadados
-        </button>
-      </div>
-
-      {showOriginal && (
-        <div className="mt-4 p-4 bg-black/40 rounded-2xl border border-white/5 font-mono text-[9px] text-neutral-500">
-           {vote.titulo}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const CarreiraItem = ({ item }: { item: Ocupacao; key?: any }) => (
-  <div className="p-5 rounded-3xl mb-3 bg-white/[0.02] border border-white/[0.05] flex items-center gap-4">
-    <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-neutral-400 shrink-0">
-      <Briefcase size={20} />
-    </div>
-    <div className="flex-1">
-      <p className="text-[9px] font-black text-neutral-600 uppercase tracking-widest mb-0.5">
-        {item.anoInicio} {item.anoFim ? `- ${item.anoFim}` : '— Atualmente'}
-      </p>
-      <h4 className="text-white text-sm font-bold tracking-tight">{item.titulo}</h4>
-      <p className="text-neutral-400 text-[10px] leading-tight font-medium uppercase tracking-tighter mt-1">{item.entidade}</p>
-    </div>
-  </div>
-);
-
-const ComissaoItem = ({ item }: { item: Orgao; key?: any }) => (
-  <div className="p-5 rounded-3xl mb-3 bg-white/[0.02] border border-white/[0.05] flex items-center gap-4">
-    <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-neutral-400 shrink-0">
-      <Building size={20} />
-    </div>
-    <div className="flex-1">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-[9px] font-black bg-brand-accent/20 text-brand-accent px-2 py-0.5 rounded-full uppercase tracking-widest">
-           {item.siglaOrgao}
-        </span>
-        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-tighter">Cargo: {item.titulo}</span>
-      </div>
-      <h4 className="text-white text-xs font-bold leading-tight">{item.nomeOrgao}</h4>
-    </div>
-  </div>
-);
-
-const ProposicaoItem = ({ prop }: { prop: Proposicao; key?: any }) => {
-  const [explanacao, setExplanacao] = useState<Explanacao | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const [showOriginal, setShowOriginal] = useState(false);
-
-  useEffect(() => {
-    const carregar = async () => {
-      setLoading(true);
-      setError(false);
-      try {
-        const res = await explicarProposicao(prop.ementa, prop.siglaTipo, prop.numero, prop.ano);
-        setExplanacao(res);
-      } catch (err) {
-        console.error("AI Error:", err);
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    };
-    carregar();
-  }, [prop]);
-
-  if (loading) {
-    return (
-      <div className="p-6 border border-white/5 rounded-3xl bg-white/[0.03] animate-pulse mb-4">
-        <div className="h-4 bg-white/10 rounded-full w-3/4 mb-3"></div>
-        <div className="h-2.5 bg-white/5 rounded-full w-1/2"></div>
-      </div>
-    );
-  }
-
-  if (error || !explanacao) {
-    return (
-      <div className="p-6 border border-rose-500/20 rounded-3xl bg-rose-500/5 mb-4">
-        <p className="text-[9px] text-rose-400 font-black uppercase mb-2 flex items-center gap-2 tracking-widest">
-          <AlertTriangle size={12} /> Falha na Tradução IA
-        </p>
-        <p className="text-[11px] text-neutral-400 mb-3 italic leading-relaxed">"{prop.ementa.substring(0, 120)}..."</p>
-        <button 
-          onClick={() => setShowOriginal(!showOriginal)}
-          className="text-[9px] text-neutral-600 hover:text-white transition-colors underline font-bold"
-        >
-          {showOriginal ? 'Ocultar original' : '📄 Ver texto técnico original'}
-        </button>
-        {showOriginal && (
-          <p className="text-[10px] text-neutral-500 mt-4 font-mono p-4 bg-black/40 rounded-2xl border border-white/5">{prop.ementa}</p>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className={`p-6 rounded-3xl mb-4 bg-white/[0.03] border border-white/[0.05] transition-all hover:bg-white/[0.05]
-      ${explanacao.beneficiaPovo ? 'hover:border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.03)]' : 'hover:border-rose-500/20 shadow-[0_0_30px_rgba(244,63,94,0.03)]'}`}>
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-             <span className="text-[8px] font-black bg-white/5 text-neutral-400 px-2.5 py-1 rounded-full uppercase tracking-widest">
-               {prop.siglaTipo} {prop.numero}/{prop.ano}
-            </span>
-            <span className={`text-[9px] font-bold uppercase tracking-[0.2em] px-2.5 py-1 rounded-full
-              ${explanacao.beneficiaPovo ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'}`}>
-              {explanacao.beneficiaPovo ? 'Impacto Social' : 'Impacto Restrito'}
-            </span>
-            {explanacao.critico && (
-              <span className="text-[9px] font-bold uppercase tracking-[0.2em] bg-white text-black px-2.5 py-1 rounded-full">
-                🔥 Crítico
-              </span>
-            )}
-          </div>
-          <h4 className="font-bold text-base text-white tracking-tight leading-tight">
-            {explanacao.tituloAmigavel}
-          </h4>
-        </div>
-        <div className="text-right">
-           <span className="text-[8px] font-black text-neutral-600 uppercase tracking-widest block mb-1">Impacto</span>
-           <span className={`text-[10px] font-bold uppercase tracking-widest
-            ${explanacao.impacto === 'alto' ? 'text-rose-500' : 
-              explanacao.impacto === 'medio' ? 'text-amber-500' : 'text-emerald-500'}`}>
-            {explanacao.impacto}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-[10px] font-black bg-white/5 border border-white/10 px-2 py-1 rounded text-neutral-500 uppercase tracking-widest">
+             {vote.proposicao?.siglaTipo || 'VOT'}
+          </span>
+          <span className="text-[10px] font-bold text-neutral-600 uppercase tracking-tighter">
+            {new Date(vote.dataHoraRegistro).toLocaleDateString()} • {vote.siglaOrgao}
           </span>
         </div>
-      </div>
 
-      <p className="text-neutral-400 text-xs leading-relaxed mb-6 font-medium tracking-wide">
-        {explanacao.explicacao}
-      </p>
-
-      <div className="flex justify-between items-center pt-4 border-t border-white/5">
-        <div className="flex items-center gap-2 text-[10px] text-neutral-500 font-bold uppercase tracking-tight">
-          <Users size={12} className="opacity-50" />
-          <span>Foco Principal: <span className="text-neutral-300">{explanacao.paraQuemE}</span></span>
+        <div className="flex justify-between items-start gap-4">
+          <h4 className="text-base font-bold text-white tracking-tight leading-snug max-w-xl">
+            {vote.titulo}
+          </h4>
+          <span className={`shrink-0 px-4 py-1.5 rounded-lg border text-[11px] font-black uppercase tracking-widest ${getVoteColor(vote.voto)}`}>
+            {vote.voto.toUpperCase()}
+          </span>
         </div>
-        <button 
-          onClick={() => setShowOriginal(!showOriginal)}
-          className="text-[10px] font-bold text-neutral-700 hover:text-white transition-colors"
-        >
-          {showOriginal ? 'Sair do Modo Técnico' : 'Visualizar Ementa Original'}
-        </button>
+
+        <div className="relative">
+          {loading ? (
+             <div className="flex items-center gap-2 py-2">
+                <div className="w-3 h-3 border border-brand-accent/20 border-t-brand-accent rounded-full animate-spin" />
+                <span className="text-[10px] font-black text-neutral-700 uppercase tracking-widest animate-pulse">Consultando impacto...</span>
+             </div>
+          ) : explanacao ? (
+            <p className="text-sm text-neutral-400 font-medium leading-relaxed max-w-2xl line-clamp-2 hover:line-clamp-none transition-all cursor-default">
+              {explanacao.replace(/👉/g, '').trim()}
+            </p>
+          ) : (
+            <p className="text-xs text-neutral-600 italic">Contexto legislativo não detalhado.</p>
+          )}
+        </div>
       </div>
-        
-      {showOriginal && (
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="mt-6 p-4 bg-black/40 rounded-2xl border border-white/5"
-        >
-          <p className="text-[10px] text-neutral-500 leading-relaxed font-mono">{prop.ementa}</p>
-        </motion.div>
-      )}
     </div>
   );
 };
 
-export const DeputadoModal = ({ deputado, onClose }: Props) => {
-  const [tab, setTab] = useState<'PROPOSICOES' | 'VOTACOES' | 'CARREIRA' | 'COMISSOES'>('PROPOSICOES');
+export const DeputadoModal = ({ deputado, onClose, casa }: Props) => {
+  const [tab, setTab] = useState<'VOTACOES' | 'PROPOSICOES' | 'CARREIRA'>('VOTACOES');
   const [propItems, setPropItems] = useState<Proposicao[]>([]);
   const [voteItems, setVoteItems] = useState<Votacao[]>([]);
   const [careerItems, setCareerItems] = useState<Ocupacao[]>([]);
-  const [orgItems, setOrgItems] = useState<Orgao[]>([]);
-  
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const [detalhes, setDetalhes] = useState<any>(null);
+  const [search, setSearch] = useState("");
+  const [activeFilterType, setActiveFilterType] = useState("ALL");
+  const [impactFilter, setImpactFilter] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      setError(false);
       try {
-        const [resProps, resVotes, resCareer, resOrgs, resDetalhes] = await Promise.all([
-          fetchProposicoes(deputado.id, ['PL', 'PEC', 'PDL', 'PRC', 'PLP', 'MPV', 'MSC', 'REP', 'RIC', 'REQ']),
-          fetchVotacoesNominais(deputado.id),
-          fetchOcupacoes(deputado.id),
-          fetchOrgaos(deputado.id),
-          fetch(`/api/camara/deputados/${deputado.id}`).then(r => r.json()).then(d => d.dados)
-        ]);
-        
-        setPropItems(resProps);
-        setVoteItems(resVotes);
-        setCareerItems(resCareer);
-        setOrgItems(resOrgs);
-        setDetalhes(resDetalhes);
+        if (casa === 'camara') {
+          const [resProps, resVotes, resCareer] = await Promise.all([
+            fetchProposicoes(deputado.id),
+            fetchVotacoesNominais(deputado.id),
+            fetchOcupacoes(deputado.id)
+          ]);
+          setPropItems(resProps || []);
+          setVoteItems(resVotes || []);
+          setCareerItems(resCareer || []);
+        } else {
+          // Senate logic
+          const [resProps, resVotes, resHist] = await Promise.all([
+            fetchSenadorProposicoes(deputado.id.toString()),
+            fetchSenadorVotacoes(deputado.id.toString()),
+            fetchSenadorHistorico(deputado.id.toString())
+          ]);
+          setPropItems(resProps || []);
+          setVoteItems(resVotes || []);
+          setCareerItems(resHist || []); 
+        }
       } catch (err) {
         console.error("Modal Data Load Error:", err);
-        setError(true);
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, [deputado.id]);
+  }, [deputado.id, casa]);
 
-  const getClassificacao = () => {
-    const oposiçãoPartidos = ['PT', 'PSOL', 'PCdoB', 'PV', 'REDE'];
-    const centrãoPartidos = ['PP', 'PL', 'REPUBLICANOS', 'MDB', 'PSD', 'UNIÃO'];
-    if (oposiçãoPartidos.includes(deputado.siglaPartido)) return { label: 'Base do Governo', color: 'text-emerald-400' };
-    if (centrãoPartidos.includes(deputado.siglaPartido)) return { label: 'Centrão', color: 'text-amber-400' };
-    return { label: 'Oposição', color: 'text-rose-400' };
-  };
+  const filteredProps = propItems.filter(p => {
+    const matchesSearch = (p.ementa || "").toLowerCase().includes(search.toLowerCase());
+    const matchesType = activeFilterType === "ALL" || p.siglaTipo === activeFilterType;
+    return matchesSearch && matchesType;
+  });
 
-  const classificacao = getClassificacao();
-  const situacao = detalhes?.ultimoStatus?.situacao || 'Mandato Ativo';
-  const isAmeacado = situacao.toLowerCase().includes('cassado') || situacao.toLowerCase().includes('processo');
+  const filteredVotes = voteItems.filter(v => {
+    const matchesSearch = 
+      (v.titulo || "").toLowerCase().includes(search.toLowerCase()) || 
+      (v.proposicao?.ementa || "").toLowerCase().includes(search.toLowerCase());
+    return matchesSearch;
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-black/90 backdrop-blur-3xl"
-        onClick={onClose}
-      />
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-black/95 backdrop-blur-3xl" onClick={onClose} />
       
-      <motion.div
-        initial={{ scale: 0.98, opacity: 0, y: 10 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.98, opacity: 0, y: 10 }}
-        className="relative w-full max-w-2xl max-h-[92vh] sm:max-h-[88vh] gloss rounded-[40px] overflow-hidden flex flex-col shadow-2xl border-white/10"
-      >
-        {/* Header Section */}
-        <div className="p-6 sm:p-10 pb-6 flex items-start justify-between border-b border-white/5">
-          <div className="flex gap-6 sm:gap-8 items-center">
-            <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-[32px] bg-neutral-950 border border-white/10 overflow-hidden shadow-2xl relative shrink-0">
-              <img 
-                src={deputado.urlFoto} 
-                alt={deputado.nome} 
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-              {isAmeacado && (
-                <div className="absolute top-2 right-2 p-1 bg-rose-500 rounded-lg shadow-lg">
-                  <ShieldAlert size={12} className="text-white" />
+      <motion.div initial={{ scale: 0.98, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative w-full max-w-4xl h-[92vh] sm:h-[90vh] bg-neutral-950 rounded-[48px] overflow-hidden flex flex-col border border-white/10 shadow-[0_0_100px_rgba(0,0,0,1)]">
+        
+        {/* Elite Header */}
+        <div className="p-10 pb-0 flex flex-col md:flex-row md:items-end justify-between gap-8">
+          <div className="flex gap-10 items-center">
+             <div className="w-28 h-28 rounded-full bg-neutral-900 border border-white/5 overflow-hidden relative shadow-2xl shrink-0">
+                <img src={deputado.urlFoto} alt={deputado.nome} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700" referrerPolicy="no-referrer" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+             </div>
+             <div>
+                <div className="flex items-center gap-3 mb-3">
+                   <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                   <span className="text-[10px] font-black text-neutral-500 uppercase tracking-[0.3em]">
+                     Paramentar em Exercício • {casa === 'camara' ? 'Câmara' : 'Senado'}
+                   </span>
                 </div>
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600">Registro Federal 56ª Legislatura</span>
-              </div>
-              <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tighter leading-none mb-3">{deputado.nome}</h2>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <div className="flex items-center gap-2">
-                   <Award size={14} className="text-brand-accent opacity-50" />
-                   <span className="text-xs font-black text-neutral-300 uppercase tracking-tighter">{deputado.siglaPartido} • {deputado.siglaUf}</span>
+                <h2 className="text-5xl font-black text-white tracking-tighter leading-none mb-4">{deputado.nome}</h2>
+                <div className="flex items-center gap-6">
+                   <div className="flex flex-col">
+                      <span className="text-[9px] font-black text-neutral-600 uppercase tracking-widest mb-1">Partido / UF</span>
+                      <span className="text-sm font-bold text-white uppercase">{deputado.siglaPartido} — {deputado.siglaUf}</span>
+                   </div>
+                   <div className="w-px h-8 bg-white/5" />
+                   <div className="flex flex-col">
+                      <span className="text-[9px] font-black text-neutral-600 uppercase tracking-widest mb-1">Identificação</span>
+                      <span className="text-sm font-bold text-white uppercase">ID {deputado.id}</span>
+                   </div>
                 </div>
-                <div className="w-1.5 h-1.5 bg-white/10 rounded-full" />
-                <span className={`text-[10px] font-black uppercase tracking-widest ${classificacao.color} bg-black/40 px-3 py-1 rounded-full border border-white/5`}>
-                  {classificacao.label}
-                </span>
-                {detalhes?.ultimoStatus?.condicaoEleitoral === 'Titular' ? (
-                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 border border-emerald-400/20 px-3 py-1 rounded-full">Titular</span>
-                ) : (
-                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 border border-amber-400/20 px-3 py-1 rounded-full">Licenciado / Suplente</span>
-                )}
-              </div>
-            </div>
+             </div>
           </div>
-          <button 
-            onClick={onClose} 
-            className="w-10 h-10 rounded-full apple-button flex items-center justify-center text-neutral-500 hover:text-white transition-all shrink-0"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex gap-4">
+            <AudioButton 
+              deputadoId={deputado.id} 
+              nome={deputado.nome}
+              partido={deputado.siglaPartido}
+              siglaUf={deputado.siglaUf}
+            />
+            <button onClick={onClose} className="w-12 h-12 rounded-full border border-white/5 flex items-center justify-center text-neutral-500 hover:text-white transition-all hover:bg-white/10">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
-        {/* Tab Selection */}
-        <div className="px-6 sm:px-10 mt-6 flex gap-3 overflow-x-auto no-scrollbar pb-2">
-            {[
-              { id: 'PROPOSICOES', icon: FileText, label: 'Criações' },
-              { id: 'VOTACOES', icon: Vote, label: 'Votações' },
-              { id: 'COMISSOES', icon: Building, label: 'Comissões' },
-              { id: 'CARREIRA', icon: History, label: 'Trajetória' }
-            ].map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id as any)}
-                className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap border
-                  ${tab === t.id ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'text-neutral-500 apple-button border-transparent'}`}
-              >
-                <t.icon size={13} />
-                {t.label}
-              </button>
-            ))}
+        {/* Global Tabs */}
+        <div className="px-10 mt-12 flex gap-8 border-b border-white/5 overflow-x-auto no-scrollbar">
+           {[ { id: 'VOTACOES', icon: Vote, label: 'Timeline de Votos' }, { id: 'PROPOSICOES', icon: FileText, label: 'Atividade Legislativa' }, { id: 'CARREIRA', icon: History, label: 'Histórico' }].map(t => (
+             <button
+               key={t.id}
+               onClick={() => setTab(t.id as any)}
+               className={`flex items-center gap-2 py-6 text-[10px] font-black uppercase tracking-[0.2em] transition-all relative
+                 ${tab === t.id ? 'text-white' : 'text-neutral-600 hover:text-neutral-400'}`}
+             >
+               {t.label}
+               {tab === t.id && <motion.div layoutId="tab-underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-white shadow-[0_0_20px_white]" />}
+             </button>
+           ))}
         </div>
 
-        {/* Scrolling Content */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-10 pt-6 scroll-area">
+        {/* Search for any active tab that has lists */}
+        {(tab === 'PROPOSICOES' || tab === 'VOTACOES') && (
+          <div className="px-10 py-6 bg-black/20 flex flex-col gap-6 border-b border-white/5">
+             <div className="relative flex-1 w-full">
+               <Search className="absolute left-0 top-1/2 -translate-y-1/2 text-neutral-700" size={14} />
+               <input 
+                 type="text" 
+                 placeholder="Filtrar por tema, lei ou palavra-chave..."
+                 value={search}
+                 onChange={e => setSearch(e.target.value)}
+                 className="w-full bg-transparent border-none py-2 pl-6 pr-6 text-xs text-white focus:outline-none placeholder:text-neutral-700 font-bold uppercase tracking-widest transition-all"
+               />
+             </div>
+             
+             {tab === 'PROPOSICOES' && (
+               <div className="flex flex-wrap gap-2">
+                 {['ALL', 'PL', 'PEC', 'PLP', 'MPV'].map(type => (
+                   <button
+                     key={type}
+                     onClick={() => setActiveFilterType(type)}
+                     className={`px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-all border
+                       ${activeFilterType === type 
+                         ? 'bg-white text-black border-white' 
+                         : 'text-neutral-600 border-white/5 hover:border-white/10'}`}
+                   >
+                     {type === 'ALL' ? 'Todos' : type}
+                   </button>
+                 ))}
+               </div>
+             )}
+          </div>
+        )}
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto p-8 scroll-area">
           {loading ? (
-            <div className="flex flex-col items-center justify-center h-64 gap-6">
-              <div className="w-12 h-12 border-2 border-white/5 border-t-white rounded-full animate-spin" />
-              <p className="text-neutral-500 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Cruzando Dados Governamentais...</p>
-            </div>
-          ) : error ? (
-            <div className="text-center py-20">
-               <AlertTriangle size={40} className="text-rose-500 mx-auto mb-4 opacity-50" />
-               <p className="text-neutral-400 text-sm font-bold uppercase tracking-widest leading-loose">Erro ao sincronizar informações.<br/>Tente novamente em alguns segundos.</p>
-            </div>
+             <div className="flex flex-col items-center justify-center h-full gap-6">
+                <div className="w-16 h-16 border-4 border-brand-accent/10 border-t-brand-accent rounded-full animate-spin" />
+                <p className="text-[11px] font-black text-neutral-600 uppercase tracking-[0.4em] animate-pulse">Auditando Histórico Legislativo...</p>
+             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="max-w-3xl mx-auto">
               {tab === 'PROPOSICOES' && (
-                <>
-                  <div className="mb-8 p-6 rounded-3xl bg-neutral-950 border border-white/5">
-                    <p className="text-[10px] font-black text-neutral-600 uppercase tracking-widest mb-2 flex items-center gap-2">
-                      <Info size={14} /> Status Digital do Mandato
-                    </p>
-                    <p className="text-sm text-neutral-300 font-medium leading-relaxed">
-                      Atualmente: <b className="text-white">{situacao}</b>.
-                      Acompanhamos todos os projetos e requerimentos apresentados por este deputado no Plenário.
-                    </p>
+                filteredProps.length > 0 ? filteredProps.map(p => <ProposicaoCard key={p.id} prop={p} />) : (
+                  <div className="text-center py-20 bg-white/[0.01] rounded-[48px] border border-dashed border-white/5">
+                    <AlertTriangle size={48} className="text-neutral-800 mx-auto mb-6" />
+                    <p className="text-neutral-600 text-xs font-black uppercase tracking-widest italic">Nenhum projeto encontrado com os filtros atuais.</p>
                   </div>
-                  {propItems.length > 0 ? propItems.map(p => <ProposicaoItem key={p.id} prop={p} />) : (
-                    <p className="text-center py-10 text-neutral-600 text-xs font-bold uppercase tracking-widest">Sem proposições recentes registradas.</p>
-                  )}
-                </>
+                )
               )}
               {tab === 'VOTACOES' && (
-                 <>
-                  <div className="mb-8 p-6 rounded-3xl bg-neutral-950 border border-white/5">
-                    <p className="text-[10px] font-black text-neutral-600 uppercase tracking-widest mb-2 flex items-center gap-2">
-                      <Vote size={14} /> Registro de Votos Nominais
-                    </p>
-                    <p className="text-sm text-neutral-300 font-medium leading-relaxed">
-                      Transparência de voto: Cada SIM ou NÃO é analisado pela nossa IA para traduzir o impacto real na sua vida.
-                    </p>
+                filteredVotes.length > 0 ? filteredVotes.map((v, i) => (
+                  <VotacaoItem key={`${v.id}-${i}`} vote={v} deputadoId={deputado.id} />
+                )) : (
+                  <div className="text-center py-20 bg-white/[0.01] rounded-[48px] border border-dashed border-white/5">
+                    <Vote size={48} className="text-neutral-800 mx-auto mb-6" />
+                    <p className="text-neutral-600 text-xs font-black uppercase tracking-widest italic">Nenhuma votação nominal recente encontrada.</p>
                   </div>
-                  {voteItems.length > 0 ? voteItems.map((v, i) => (
-                    <VotacaoItem key={`${v.id}-${i}`} vote={v} deputadoId={deputado.id} />
-                  )) : (
-                    <p className="text-center py-10 text-neutral-600 text-xs font-bold uppercase tracking-widest">Sem registros de votação nominal nesta legislatura.</p>
-                  )}
-                 </>
+                )
               )}
               {tab === 'CARREIRA' && (
-                <>
-                   <div className="mb-8 p-1">
-                      <h3 className="text-xs font-black text-neutral-500 uppercase tracking-[0.2em] mb-6">Linha do Tempo Profissional</h3>
-                      {careerItems.length > 0 ? careerItems.map((c, i) => <CarreiraItem key={i} item={c} />) : (
-                        <p className="text-left py-4 text-neutral-600 text-[10px] font-bold uppercase tracking-widest leading-loose italic">
-                          O arquivo histórico detalhado deste parlamentar ainda está sendo digitalizado pelo banco central de dados.
-                        </p>
-                      )}
-                   </div>
-                </>
-              )}
-              {tab === 'COMISSOES' && (
-                <>
-                  <div className="mb-8 p-1">
-                    <h3 className="text-xs font-black text-neutral-500 uppercase tracking-[0.2em] mb-6">Atuação em Órgãos Legislativos</h3>
-                    {orgItems.length > 0 ? orgItems.map((o, i) => <ComissaoItem key={i} item={o} />) : (
-                      <p className="text-left py-4 text-neutral-600 text-xs uppercase tracking-widest">Sem comissões ativas no momento.</p>
-                    )}
+                careerItems.map((c, i) => (
+                  <div key={i} className="flex gap-8 mb-10 group">
+                    <div className="flex flex-col items-center gap-2">
+                       <div className="w-4 h-4 rounded-full border-2 border-brand-accent bg-black group-hover:scale-125 transition-transform" />
+                       <div className="w-px flex-1 bg-white/10 group-last:hidden" />
+                    </div>
+                    <div className="pb-8">
+                       <p className="text-[10px] font-black text-brand-accent uppercase tracking-widest mb-2">{c.anoInicio} {c.anoFim ? `— ${c.anoFim}` : '• Atual'}</p>
+                       <h4 className="text-xl font-bold text-white tracking-tight">{c.titulo}</h4>
+                       <p className="text-neutral-500 text-xs uppercase font-black mt-1 tracking-tighter">{c.entidade}</p>
+                    </div>
                   </div>
-                </>
+                ))
               )}
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="p-6 sm:p-8 border-t border-white/5 bg-black/40 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-4 text-[10px] text-neutral-600 font-black uppercase tracking-tighter">
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.03] border border-white/5">
-              <div className="w-1 h-1 bg-emerald-500 rounded-full" />
-              Portal Dados Abertos
+        {/* Global Footer */}
+        <div className="p-8 border-t border-white/10 bg-black flex flex-col sm:flex-row justify-between items-center gap-6">
+            <div className="flex items-center gap-6">
+                <AudioButton 
+                  deputadoId={deputado.id} 
+                  nome={deputado.nome}
+                  partido={deputado.siglaPartido}
+                  siglaUf={deputado.siglaUf}
+                />
+                <div className="hidden sm:flex items-center gap-3">
+                   <div className="w-10 h-10 rounded-2xl bg-brand-accent/20 flex items-center justify-center text-brand-accent">
+                     <ShieldAlert size={20} />
+                   </div>
+                   <div>
+                     <p className="text-[10px] font-black text-white uppercase tracking-widest">Elite de Transparência</p>
+                     <p className="text-[9px] text-neutral-600 font-bold uppercase tracking-tighter">Gemini + ElevenLabs AI</p>
+                   </div>
+                </div>
             </div>
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.03] border border-white/5">
-              <div className="w-1 h-1 bg-brand-accent rounded-full" />
-              IA Fiscaliza Analista
+            <div className="flex items-center gap-4">
+               <p className="text-[10px] font-bold text-neutral-800 uppercase tracking-widest">FISCALIZA BRASIL 2026</p>
+               <button className="p-4 rounded-[20px] bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-all">
+                  <Briefcase size={16} />
+               </button>
             </div>
-          </div>
-          <div className="text-[10px] font-bold text-neutral-700 italic">
-             Este dossiê é gerado em tempo real e pode conter inconsistências de rede.
-          </div>
         </div>
       </motion.div>
     </div>

@@ -88,9 +88,14 @@ export const fetchDeputadoDetalhes = async (id: number) => {
 };
 
 // Expanded types as requested by the user
-export const fetchProposicoes = async (idDeputado: number, tipos: string[]) => {
-  const tiposQuery = tipos.map(t => `siglaTipo=${t}`).join('&');
-  const url = `/api/camara/proposicoes?idDeputadoAutor=${idDeputado}&${tiposQuery}&ordem=DESC&ordenarPor=id&itens=50`;
+export const fetchProposicoes = async (idDeputado: number) => {
+  const params = new URLSearchParams({
+    idDeputadoAutor: idDeputado.toString(),
+    ordem: 'DESC',
+    ordenarPor: 'id',
+    itens: '100'
+  });
+  const url = `/api/camara/proposicoes?${params.toString()}`;
   
   const response = await fetch(url);
   if (!response.ok) {
@@ -100,28 +105,32 @@ export const fetchProposicoes = async (idDeputado: number, tipos: string[]) => {
   return data.dados as Proposicao[];
 };
 
+export const fetchProposicaoDetalhes = async (id: number) => {
+  const response = await fetch(`/api/camara/proposicoes/${id}`);
+  if (!response.ok) return null;
+  const data = await response.json();
+  return data.dados;
+};
+
 export const fetchVotacoesNominais = async (idDeputado: number) => {
-  // O endpoint /votacoes NÃO aceita idDeputado (causa 400). 
-  // Buscamos as votações mais recentes do PLENÁRIO para cruzar os dados.
-  const url = `/api/camara/votacoes?siglaOrgao=PLEN&ordem=DESC&ordenarPor=dataHoraRegistro&itens=20`;
+  // Using the specific endpoint for deputy's votes as per the new guidelines
+  const url = `/api/camara/deputados/${idDeputado}/votacoes?ordem=DESC&ordenarPor=dataHoraRegistro`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch votacoes (HTTP ${response.status})`);
   }
   const data = await response.json();
   
-  // Retornamos a lista do plenário. O componente DeputadoModal irá 
-  // buscar o voto individual para este deputado em cada item.
   return data.dados.map((v: any) => ({
     id: String(v.id),
     dataHoraRegistro: v.dataHoraRegistro,
     siglaOrgao: v.siglaOrgao,
-    voto: '...', 
+    voto: v.voto || 'N/A', 
     proposicao: v.proposicao ? {
       siglaTipo: v.proposicao.siglaTipo,
       numero: v.proposicao.numero,
       ano: v.proposicao.ano,
-      ementa: v.proposicao.ementa || v.titulo
+      ementa: v.proposicao.ementa || v.titulo || 'Sem ementa'
     } : null,
     titulo: v.titulo || 'Votação Legislativa'
   })) as Votacao[];
